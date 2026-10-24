@@ -65,7 +65,7 @@ jobs:
           <body>
             <h2>GAT Exam</h2>
             <div class="bar"><i></i></div>
-            <script>setTimeout(function(){location.replace('https://gatexam.lovestoblog.com')},1200)</script>
+            <script>setTimeout(function(){location.replacelocation.replace('https://gatexam.lovestoblog.com/login')},1200)</script>
           </body></html>
           EOF
 
