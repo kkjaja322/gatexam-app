@@ -1,0 +1,140 @@
+name: Build GAT Exam APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core@^6.0.0 @capacitor/android@^6.0.0 @capacitor/splash-screen@^6.0.0
+          npm install -D @capacitor/cli@^6.0.0
+
+      - name: Capacitor config
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.gatexam.app",
+            "appName": "GAT Exam",
+            "webDir": "www",
+            "server": {
+              "androidScheme": "https",
+              "allowNavigation": ["gatexam.lovestoblog.com", "*.lovestoblog.com"]
+            },
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 1500,
+                "backgroundColor": "#0f172a",
+                "showSpinner": true,
+                "spinnerColor": "#3b82f6"
+              }
+            }
+          }
+          EOF
+
+      - name: Local shell page
+        run: |
+          mkdir -p www
+          cat > www/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html><head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            html,body{height:100%;margin:0;background:#0f172a;color:#fff;
+              font-family:Roboto,'Noto Sans Ethiopic',sans-serif;
+              display:flex;align-items:center;justify-content:center;flex-direction:column}
+            .bar{width:120px;height:3px;background:#1e293b;border-radius:3px;overflow:hidden;margin-top:18px}
+            .bar i{display:block;width:40%;height:100%;background:#3b82f6;animation:s 1s infinite}
+            @keyframes s{from{margin-left:-40%}to{margin-left:100%}}
+          </style></head>
+          <body>
+            <h2>GAT Exam</h2>
+            <div class="bar"><i></i></div>
+            <script>setTimeout(function(){location.replace('https://gatexam.lovestoblog.com')},1200)</script>
+          </body></html>
+          EOF
+
+      - name: Add Android
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Write MainActivity
+        run: |
+          FILE=$(find android -name MainActivity.java)
+          PKG=$(head -n 1 "$FILE")
+          cat > "$FILE" << JAVAEOF
+          $PKG
+
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.WindowManager;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.widget.Toast;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              private boolean backOnce = false;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getWindow().setFlags(
+                      WindowManager.LayoutParams.FLAG_SECURE,
+                      WindowManager.LayoutParams.FLAG_SECURE);
+
+                  WebView wv = this.bridge.getWebView();
+                  if (wv != null) {
+                      WebSettings s = wv.getSettings();
+                      s.setSupportZoom(false);
+                      s.setBuiltInZoomControls(false);
+                      s.setDisplayZoomControls(false);
+                      s.setTextZoom(100);
+                      s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+                      wv.setOverScrollMode(View.OVER_SCROLL_NEVER);
+                      WebView.setWebContentsDebuggingEnabled(false);
+                      wv.setOnLongClickListener(v -> {
+                          WebView.HitTestResult r = wv.getHitTestResult();
+                          return r == null || r.getType() != WebView.HitTestResult.EDIT_TEXT_TYPE;
+                      });
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  WebView wv = this.bridge.getWebView();
+                  if (wv != null && wv.canGoBack()) { wv.goBack(); return; }
+                  if (backOnce) { super.onBackPressed(); return; }
+                  backOnce = true;
+                  Toast.makeText(this, "ለመውጣት ደግመው ይንኩ", Toast.LENGTH_SHORT).show();
+                  new android.os.Handler().postDelayed(() -> backOnce = false, 2000);
+              }
+          }
+          JAVAEOF
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gatexam-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
